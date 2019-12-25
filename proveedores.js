@@ -1,78 +1,130 @@
-const rp = require('request-promise');
 const $ = require('cheerio');
 const xl = require('excel4node');
+
 const XLSX = require('xlsx');
 const workbook = XLSX.readFile('excel/envio.xlsx');
 const sheet_name_list = workbook.SheetNames;
 
-let lstDatosProveedores = [];
+const http = require('http');
 
-function cargarExcel() {
-    let lstRut = XLSX.utils.sheet_to_json(workbook.Sheets[sheet_name_list[0]]);
+const urls = [];
+const lstDatosProveedores = [];
 
-    for (const elemento of lstRut) {
-       getDataProveedores(elemento.rut);
+class Proveedor {
+    constructor(sitioWeb,personaContacto,telefonoContacto,mail,direccion) {
+        this.sitioWeb = sitioWeb;
+        this.personaContacto = personaContacto;
+        this.telefonoContacto = telefonoContacto;
+        this.mail = mail;
+        this.direccion = direccion;
     }
 }
 
-function getDataProveedores(rut) {
+function cargarExcel() {
+    let lstRut = XLSX.utils.sheet_to_json(workbook.Sheets[sheet_name_list[0]]);
+    for (const element of lstRut) {
+        urls.push('http://webportal.mercadopublico.cl/proveedor/' + element.rut);
+    }
+}
 
-    const url = 'http://webportal.mercadopublico.cl/proveedor/' + rut;
-    rp(url)
-        .then(function (html) {
-            return {
-                sitioWeb: $('#lblLinkSitioWeb', html).text(),
-                personaContacto: $('#lblPersonaContacto', html).text(),
-                telefonoContacto: $('#lblTelefonoContacto', html).text(),
-                mail: $('#lblMail', html).text(),
-                direccion: $('#lblDireccion', html).text()
-              };
-        })
-        .catch(function (err) {
-            //handle error
-        }).then(function(dato) {
-            lstDatosProveedores.push(dato);
-        })
+function crearDataProveedores() {
+    var completed_requests = 0;
+
+    urls.forEach(function(url) {
+        http.get(url, (resp) => {
+            let data = '';
+
+            resp.on('data', (chunk) => {
+                data += chunk;
+            });
+
+            resp.on('end', () => {
+                lstDatosProveedores.push(new Proveedor($('#lblLinkSitioWeb', data).text(),
+                $('#lblPersonaContacto', data).text(),$('#lblTelefonoContacto', data).text(),$('#lblMail', data).text(),$('#lblDireccion', data).text()));
+                if (completed_requests++ == urls.length - 1) {
+                    crearExcel();
+                }     
+            });
+    
+            }).on("error", (err) => {
+                console.log("Error: " + err.message);
+            });
+    });
 }
 
 function crearExcel(){
-
     let wb = new xl.Workbook();
     let ws = wb.addWorksheet('Sheet 1');
+
+    crearCabezeraExcel(wb,ws);
+
     let style = wb.createStyle({
         font: {
-            color: '#FF0800',
+            color: '#000000',
             size: 12,
         }
     });
 
-    for (let index = 0; index < lstDatosProveedores.length; index++) {
-        const element = lstDatosProveedores[index];
-
-        ws.cell(index, 1)
-        .string(element.sitioWeb)
+    let indexExcel = 2;
+    for (const value of lstDatosProveedores) {
+        
+        ws.cell(indexExcel, 1)
+        .string(value.sitioWeb)
         .style(style);
 
-        ws.cell(index, 2)
-        .string(element.personaContacto)
+        ws.cell(indexExcel, 2)
+        .string(value.personaContacto)
         .style(style);
 
-        ws.cell(index, 3)
-        .string(element.telefonoContacto)
+        ws.cell(indexExcel, 3)
+        .string(value.telefonoContacto)
         .style(style);
 
-        ws.cell(index, 4)
-        .string(element.mail)
+        ws.cell(indexExcel, 4)
+        .string(value.mail)
         .style(style);
 
-        ws.cell(index, 5)
-        .string(element.direccion)
+        ws.cell(indexExcel, 5)
+        .string(value.direccion)
         .style(style);
+
+        indexExcel++;
     }
     
     wb.write('excel/respuesta.xlsx');
 }
 
-cargarExcel();
+function crearCabezeraExcel(wb,ws){
 
-crearExcel();
+    let style = wb.createStyle({
+        font: {
+            color: '#000000',
+            size: 12,
+        }
+    });
+
+    ws.cell(1, 1)
+    .string('sitioWeb')
+    .style(style);
+
+    ws.cell(1, 2)
+    .string('personaContacto')
+    .style(style);
+
+    ws.cell(1, 3)
+    .string('telefonoContacto')
+    .style(style);
+
+    ws.cell(1, 4)
+    .string('mail')
+    .style(style);
+
+    ws.cell(1, 5)
+    .string('direccion')
+    .style(style);
+
+}
+
+
+cargarExcel();
+crearDataProveedores();
